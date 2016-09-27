@@ -1,8 +1,10 @@
 var Promise = require("bluebird");
 var retry = require('retry');
 var _ = require('lodash');
+var fs = Promise.promisifyAll(require('fs'));
 
 var google = require('googleapis');
+var googleAuth = require('google-auth-library');
 var bigquery = Promise.promisifyAll(google.bigquery('v2').jobs);
 
 var aws_config = require("./aws_credentials.json");
@@ -119,24 +121,33 @@ var getGCPTransferStatus = function(job) {
 }
 
 var getAuth = function(){
-  var resolver = Promise.defer();
+
   if(authClient) {
     return Promise.resolve(authClient);
   }
 
-  google.auth.getApplicationDefault(function(err, auth) {
-    if (err) {
-      resolver.reject(err);
-    }
-    if (auth.createScopedRequired && auth.createScopedRequired()) {
-      var scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-      auth = auth.createScoped(scopes);
-    }
-    authClient = auth;
-    resolver.resolve(authClient);
+  var authorize = function(credentials) {
+    var resolver = Promise.defer();
+    //console.log(credentials);
+    var auth = new googleAuth();
+    var oauth2Client = new auth.OAuth2();
+    var jwt = new google.auth.JWT(credentials.client_email,null,credentials.private_key,['https://www.googleapis.com/auth/cloud-platform']);
+    jwt.authorize(function(err, result) {
+      //console.log("Token",result.access_token);
+      oauth2Client.setCredentials({
+        access_token: result.access_token
+      });
+      authClient = oauth2Client;
+      resolver.resolve(authClient);
+    });
+    return resolver.promise;
+  }
+
+  return fs.readFileAsync('gcp_credentials.json')
+  .then(function(content){
+    return authorize(JSON.parse(content));
   });
 
-  return resolver.promise;
 }
 
 var createLoadJob = function(uris,table){
@@ -252,7 +263,6 @@ getAuth()
 .catch(function(err){
   console.log(err);
 });
-
 /*
 exports.handler = (event, context, callback) => {
    // TODO implement
@@ -260,4 +270,5 @@ exports.handler = (event, context, callback) => {
    event.Records.forEach(function(record){
        createTransferRequest(record,callback);
    });
-};*/
+};
+*/
