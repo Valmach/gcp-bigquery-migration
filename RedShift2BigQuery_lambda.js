@@ -6,20 +6,20 @@ var google = require('googleapis');
 var googleAuth = require('google-auth-library');
 var bigquery = Promise.promisifyAll(google.bigquery('v2').jobs);
 
-var aws_config = require("./aws_credentials.json");
-var gcp_config = require("./gcp_credentials.json");
+var aws_credentials = require("./aws_credentials.json");
+var gcp_credentials = require("./gcp_credentials.json");
+var config = require("./config.json");
 
 var storagetransfer_transferJobs=Promise.promisifyAll(google.storagetransfer('v1').transferJobs);
 var storagetransfer_transferOperations=Promise.promisifyAll(google.storagetransfer('v1').transferOperations);
 
+var s3_backet_name = config.s3_backet_name;
+var gcs_bucket = config.gcs_bucket;
+var gcs_project = config.gcs_project;
+var gcs_dataset = config.gcs_dataset;
 
-var s3_backet_name = "almalogic-redshift-export";
-var gcs_bucket = "ssb-s3-transfer";
-var gcs_project = "juvogrid";
-var gcp_credential_file = "gcp_credentials.json";
-
-var aws_accessKeyId =  aws_config.aws_accessKeyId;
-var aws_secretAccessKey =  aws_config.aws_secretAccessKey;
+var aws_accessKeyId =  aws_credentials.aws_accessKeyId;
+var aws_secretAccessKey =  aws_credentials.aws_secretAccessKey;
 
 var authClient;
 
@@ -129,7 +129,7 @@ var getAuth = function(){
   //console.log(credentials);
   var auth = new googleAuth();
   var oauth2Client = new auth.OAuth2();
-  var jwt = new google.auth.JWT(gcp_config.client_email,null,gcp_config.private_key,['https://www.googleapis.com/auth/cloud-platform']);
+  var jwt = new google.auth.JWT(gcp_credentials.client_email,null,gcp_credentials.private_key,['https://www.googleapis.com/auth/cloud-platform']);
   jwt.authorize(function(err, result) {
     //console.log("Token",result.access_token);
     oauth2Client.setCredentials({
@@ -156,7 +156,7 @@ var createLoadJob = function(uris,table){
         allowJaggedRows: true,
         destinationTable: {
           projectId: gcs_project,
-          datasetId: "ssb",
+          datasetId: gcs_dataset,
           tableId: table
         },
         skipLeadingRows: 0
@@ -220,7 +220,7 @@ var pipeline = function(object){
     //need to put logic mapping object uploaded into table
     var prefixes = result.operations[0].metadata.transferSpec.objectConditions.includePrefixes;
     var uris = _.map(prefixes,function(prefix){
-      return "gs://ssb-s3-transfer/"+prefix;
+      return "gs://" + gcs_bucket + "/"+prefix;
     });
     //console.log(prefixes,uris);
     var table_name = prefixes[0].split("_")[0];
@@ -244,7 +244,7 @@ exports.handler = (event, context, callback) => {
            key:"part_0003_part_00"
          },
          bucket:{
-           name:"almalogic-redshift-export"
+           name:s3_backet_name
          }
        }
      }]
