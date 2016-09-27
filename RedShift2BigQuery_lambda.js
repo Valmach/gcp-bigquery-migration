@@ -1,7 +1,6 @@
 var Promise = require("bluebird");
 var retry = require('retry');
 var _ = require('lodash');
-var fs = Promise.promisifyAll(require('fs'));
 
 var google = require('googleapis');
 var googleAuth = require('google-auth-library');
@@ -121,33 +120,26 @@ var getGCPTransferStatus = function(job) {
 }
 
 var getAuth = function(){
+  var resolver = Promise.defer();
 
   if(authClient) {
     return Promise.resolve(authClient);
   }
 
-  var authorize = function(credentials) {
-    var resolver = Promise.defer();
-    //console.log(credentials);
-    var auth = new googleAuth();
-    var oauth2Client = new auth.OAuth2();
-    var jwt = new google.auth.JWT(credentials.client_email,null,credentials.private_key,['https://www.googleapis.com/auth/cloud-platform']);
-    jwt.authorize(function(err, result) {
-      //console.log("Token",result.access_token);
-      oauth2Client.setCredentials({
-        access_token: result.access_token
-      });
-      authClient = oauth2Client;
-      resolver.resolve(authClient);
+  //console.log(credentials);
+  var auth = new googleAuth();
+  var oauth2Client = new auth.OAuth2();
+  var jwt = new google.auth.JWT(gcp_config.client_email,null,gcp_config.private_key,['https://www.googleapis.com/auth/cloud-platform']);
+  jwt.authorize(function(err, result) {
+    //console.log("Token",result.access_token);
+    oauth2Client.setCredentials({
+      access_token: result.access_token
     });
-    return resolver.promise;
-  }
-
-  return fs.readFileAsync('gcp_credentials.json')
-  .then(function(content){
-    return authorize(JSON.parse(content));
+    authClient = oauth2Client;
+    resolver.resolve(authClient);
   });
 
+  return resolver.promise;
 }
 
 var createLoadJob = function(uris,table){
@@ -241,34 +233,38 @@ var pipeline = function(object){
   });
 }
 
-var object = {
-  s3:{
-    object:{
-      key:"part_0003_part_00"
-    },
-    bucket:{
-      name:"almalogic-redshift-export"
-    }
-  }
-};
-
-getAuth()
-.then(function(){
-  console.log("Initiating Pipeline");
-  return pipeline(object);
-})
-.then(function(result){
-  console.log("New Data Loaded",result.statistics);
-})
-.catch(function(err){
-  console.log(err);
-});
-/*
 exports.handler = (event, context, callback) => {
    // TODO implement
    console.log("New File Event Received");
+
+   /*var event = {
+    Records: [{
+       s3:{
+         object:{
+           key:"part_0003_part_00"
+         },
+         bucket:{
+           name:"almalogic-redshift-export"
+         }
+       }
+     }]
+   };*/
+
    event.Records.forEach(function(record){
-       createTransferRequest(record,callback);
+
+     getAuth()
+     .then(function(){
+       console.log("Initiating Pipeline");
+       return pipeline(record);
+     })
+     .then(function(result){
+       console.log("New Data Loaded",result.statistics);
+       callback(null,result.statistics);
+     })
+     .catch(function(err){
+       console.log(err);
+       callback(err,null);
+     });
+
    });
 };
-*/
